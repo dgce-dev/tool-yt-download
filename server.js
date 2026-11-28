@@ -265,9 +265,13 @@ app.post('/api/download', async (req, res) => {
 
       res.setHeader('Content-Disposition', contentDisposition(baseName, 'mp4'));
       res.setHeader('Content-Type', 'video/mp4');
-      Readable.fromWeb(resp.body).pipe(res);
+      const stream = Readable.fromWeb(resp.body);
+      req.on('close', () => {
+        if (!res.writableEnded) stream.destroy();
+      });
+      stream.pipe(res);
     } catch (e) {
-      res.status(400).json({ error: e.message });
+      if (!res.headersSent) res.status(400).json({ error: e.message });
     }
     return;
   }
@@ -298,20 +302,43 @@ app.post('/api/download', async (req, res) => {
 
   // Manual timeout since spawn() doesn't support timeout option
   const timeout = setTimeout(() => {
-    proc.kill('SIGTERM');
+    killProc();
   }, 600000);
+
+  let killed = false;
+  const killProc = () => {
+    if (killed) return;
+    killed = true;
+    clearTimeout(timeout);
+    if (proc.pid) {
+      if (process.platform === 'win32') {
+        spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t']);
+      } else {
+        proc.kill('SIGKILL');
+      }
+    }
+    try { fs.unlinkSync(tmpFile); } catch (_) { }
+    if (isOriginalAudio) { const f = findOutputFile(tmpBase); if (f) try { fs.unlinkSync(f); } catch (_) { } }
+  };
+
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      killProc();
+    }
+  });
 
   let stderrBuf = '';
   proc.stderr.on('data', (chunk) => { stderrBuf += chunk.toString(); });
 
   proc.on('error', () => {
-    res.status(500).json({ error: 'Failed to start download process.' });
-    try { fs.unlinkSync(tmpFile); } catch (_) { }
-    if (isOriginalAudio) { const f = findOutputFile(tmpBase); if (f) try { fs.unlinkSync(f); } catch (_) { } }
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to start download process.' });
+    killProc();
   });
 
   proc.on('close', (code) => {
     clearTimeout(timeout);
+    if (killed || res.writableEnded || res.destroyed) return;
+
     if (code !== 0) {
       const msg = stderrBuf.split('\n').filter(l => l.trim()).pop() || 'Download failed';
       res.status(400).json({ error: msg });

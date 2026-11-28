@@ -235,7 +235,8 @@
       box-shadow: 0 4px 20px rgba(102, 126, 234, .3);
     }
 
-    .btn-primary:disabled {
+    .btn-primary:disabled,
+    .btn-download:disabled {
       opacity: .5;
       cursor: not-allowed;
       transform: none;
@@ -446,11 +447,44 @@
       box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
     }
 
+    .progress-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      gap: 12px;
+    }
+
     .progress-text {
-      text-align: center;
       font-size: 12px;
       color: #888;
-      margin-top: 8px;
+    }
+
+    .btn-cancel {
+      display: none;
+      background: transparent;
+      border: 1px solid #ef4444;
+      color: #ef4444;
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-cancel:hover {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    body.light-mode .btn-cancel {
+      border-color: #dc2626;
+      color: #dc2626;
+    }
+
+    body.light-mode .btn-cancel:hover {
+      background: #dc2626;
+      color: #fff;
     }
 
     @media (max-width: 520px) {
@@ -518,7 +552,10 @@
         <div class="progress-bar">
           <div class="progress-fill" id="progressFill"></div>
         </div>
-        <div class="progress-text" id="progressText">Downloading... 0%</div>
+        <div class="progress-meta">
+          <div class="progress-text" id="progressText">Downloading... 0%</div>
+          <button type="button" class="btn-cancel" id="btnCancel">Cancel</button>
+        </div>
       </div>
       <div class="status-msg" id="statusMsg"></div>
     </div>
@@ -562,10 +599,18 @@
     const progressContainer = document.getElementById('progressContainer');
     const progressFill = document.getElementById('progressFill');
     const progressText = document.getElementById('progressText');
+    const btnCancel = document.getElementById('btnCancel');
 
     let selectedFormatId = null;
     let selectedBitrate = 'original';
     let progressInterval = null;
+    let downloadAbortController = null;
+
+    btnCancel.addEventListener('click', () => {
+      if (downloadAbortController) {
+        downloadAbortController.abort();
+      }
+    });
 
     audioSelector.querySelectorAll('.res-chip').forEach(chip => {
       chip.addEventListener('click', () => {
@@ -762,6 +807,13 @@
     }
 
     async function downloadMedia(url, type, info) {
+      if (downloadAbortController) return;
+
+      const downloadBtns = actions.querySelectorAll('.btn-download');
+      downloadBtns.forEach(btn => btn.disabled = true);
+      btnCancel.style.display = 'inline-block';
+      downloadAbortController = new AbortController();
+
       setStatus('Starting download...', '');
       startProgressSimulation();
       let dlUrl = url;
@@ -769,11 +821,13 @@
       const body = { url: dlUrl, type, filename: info.title || '' };
       if (type === 'video' && selectedFormatId) body.format_id = selectedFormatId;
       if (type === 'audio') body.bitrate = selectedBitrate;
+      let success = false;
       try {
         const res = await fetch('/api/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          body: JSON.stringify(body),
+          signal: downloadAbortController.signal
         });
 
         if (!res.ok) {
@@ -821,11 +875,19 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(a.href);
 
-        stopProgressSimulation(true);
+        success = true;
         setStatus('Download complete!', 'success');
       } catch (err) {
-        stopProgressSimulation(false);
-        setStatus(err.message || 'Download failed.', 'error');
+        if (err.name === 'AbortError') {
+          setStatus('Download cancelled.', 'error');
+        } else {
+          setStatus(err.message || 'Download failed.', 'error');
+        }
+      } finally {
+        stopProgressSimulation(success);
+        downloadAbortController = null;
+        btnCancel.style.display = 'none';
+        downloadBtns.forEach(btn => btn.disabled = false);
       }
     }
 
