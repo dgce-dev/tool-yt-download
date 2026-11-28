@@ -284,17 +284,17 @@ app.post('/api/download', async (req, res) => {
   let args;
   if (type === 'audio' && isOriginalAudio) {
     ext = null;
-    args = [...YT_DLP_BASE, '--no-playlist', '-x', '--audio-format', 'best', '-o', `${tmpBase}.%(ext)s`, singleUrl];
+    args = ['--no-playlist', '-x', '--audio-format', 'best', '-o', `${tmpBase}.%(ext)s`, singleUrl];
   } else if (type === 'audio') {
     const quality = bitrate || '320K';
-    args = [...YT_DLP_BASE, '--no-playlist', '-x', '--audio-format', 'mp3', '--audio-quality', quality, '-o', tmpFile, singleUrl];
+    args = ['--no-playlist', '-x', '--audio-format', 'mp3', '--audio-quality', quality, '-o', tmpFile, singleUrl];
   } else if (format_id) {
-    args = [...YT_DLP_BASE, '--no-playlist', '-f', `${format_id}+bestaudio[ext=m4a]/${format_id}+bestaudio/best`, '--merge-output-format', 'mp4', '-o', tmpFile, singleUrl];
+    args = ['--no-playlist', '-f', `${format_id}+bestaudio[ext=m4a]/${format_id}+bestaudio/best`, '--merge-output-format', 'mp4', '-o', tmpFile, singleUrl];
   } else {
-    args = [...YT_DLP_BASE, '--no-playlist', '-f', 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]+bestaudio/best[ext=mp4]/best', '--merge-output-format', 'mp4', '-o', tmpFile, singleUrl];
+    args = ['--no-playlist', '-f', 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]+bestaudio/best[ext=mp4]/best', '--merge-output-format', 'mp4', '-o', tmpFile, singleUrl];
   }
 
-  const spawnReq = buildYtDlpArgs(args.slice(1));
+  const spawnReq = buildYtDlpArgs(args);
   const proc = spawn(spawnReq.args[0], spawnReq.args.slice(1), {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: spawnReq.env
